@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<!-- saved from url=(0075)file:///home/al/local-projects/three.js/examples/webgl_geometry_colors.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+		<title>Kaleidocycle Demo</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+
+		<style>
+			body {
+				color: #808080;
+				font-family:Monospace;
+				font-size:13px;
+				text-align:center;
+
+				background-color: #fff;
+				margin: 0px;
+				overflow: hidden;
+			}
+
+			#info {
+				position: absolute;
+				width:100%;
+				top: 0px; 
+				padding: 5px;
+			}
+
+			#extra-info {
+				width: 60%; 
+				margin: 0 auto;
+				visibility: hidden;
+			}
+
+			a {
+
+				color: #0080ff;
+			}
+			h3 {
+				margin: 0;
+				padding: 0;
+
+			}
+		</style>
+		<script src="./js/dat.gui.min.js"></script>
+		<link rel="stylesheet" type="text/css" href="datgui-light.css">
+	</head>
+	<body>
+		<div id="container"></div>
+		<div id="info">Kaleidocycle Demo - <a id="show_info_button" onclick="show_info()" href="#">Info</a><br>
+		<div id="extra-info" > 
+		Kaleidocycles are a fun little mathematical toy made from a chain of special tetrahedrons with certain properties which allows them to rotate freely. This demo allows you to generate all such chains.<br>
+		Change side lengths by updating offsets PA, PB, QC, QD.  <br> Sidelengths are constrained to be positive (PB-PA>0, QD-QC>0).<br>
+		One can update the number of sides/tetrahedrons to any even number greater than 6. <br> </div>
+		</div>
+
+		<script src="./js/three.min.js"></script>
+
+		<script src="./js/Detector.js"></script>
+		<script src="./js/stats.min.js"></script>
+		<script src="./js/gif.js"></script>
+
+		<script>
+			if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
+			var extrainfo_div = document.getElementById( 'extra-info' );
+
+			function show_info(){
+				var extrainfo = document.getElementById('extra-info');
+				var show_info = document.getElementById("show_info_button")
+				if (extrainfo.style.visibility == "visible"){
+					extrainfo.style.visibility = "hidden";
+					show_info.innerHTML = 'Info';
+				}else{
+					extrainfo.style.visibility = "visible"
+					show_info.innerHTML = 'Hide Info';
+				}
+			}
+
+			var container, stats;
+			var camera, scene, renderer, gui;
+			var mesh, kaleidocycleObject,kaleidocycleWireframe, group3, light;
+
+			var kaleidocycleSettings = {
+				"Theta":0,
+				"h":100*Math.sqrt(3),
+				"Sides":6,
+				"PA":100,
+				"PB":100,
+				"QC":100,
+				"QD":100
+			}
+
+			var kaleidocycleMaterials = [
+				new THREE.MeshPhongMaterial({color:0xcc2222, shading: THREE.FlatShading}),
+				new THREE.MeshPhongMaterial({color:0x22cc22, shading: THREE.FlatShading}),
+				new THREE.MeshPhongMaterial({color:0x2222cc, shading: THREE.FlatShading}),
+				new THREE.MeshPhongMaterial({color:0xcccc22, shading: THREE.FlatShading})
+			];
+
+			var mouse = { "x":0, "y":0} , lastMouse= { "x":0, "y":0} , mousedown = false;
+
+			var windowHalfX = window.innerWidth / 2;
+			var windowHalfY = window.innerHeight / 2;
+			var time = 0;
+			var kaleidocycle_geometry;
+			var guiData;
+
+			init();
+			animate();
+
+			function generate_tetrahedron_chain(t,h,n,pa,pb,qc,qd){ 
+				// This is where the magic happens.
+				// The math was all done by someone else, see here: http://www.kaleidocycles.de/theory.shtml
+
+				// t = theta = the angle of rotation of the tetrahedron
+				// h = distance betwen pq = scale factor of individual tetrahedron
+				// n = number of tetrahedrons in cycle; must be even.
+				// pa, pb = offsets for points a,b from point p
+				// qc, qd = offsets for points c,d from point q
+
+				var u,v,w;
+				var alpha,ct,st,ca,sa,ta;
+
+				t = Math.PI*t/180;
+
+				if(pa == 0){
+					pa = 0.0001;
+				}
+
+				if(qc == 0){
+					qc = 0.0001;
+				}
+
+				alpha = Math.PI*2/n;
+				ct = Math.cos(t);
+				st = Math.sin(t);
+				ta = Math.tan(alpha);
+
+				u = new THREE.Vector3( ct, 0, st );
+				v = (new THREE.Vector3( -st, -st*ta, ct )).multiplyScalar(1/(Math.sqrt(1+st*st*ta*ta)));
+				w = new THREE.Vector3();
+				w.crossVectors( u, v ).negate();
+
+				var P, Q;
+
+				P = (new THREE.Vector3(w.y/ta - w.x, 0, -w.z/2)).multiplyScalar(h);
+				Q = (new THREE.Vector3(w.y/ta, w.y, w.z/2)).multiplyScalar(h);
+
+				var A,B,C,D;
+
+				A = new THREE.Vector3();
+
+				A.subVectors(P, u.multiplyScalar(pa));
+				u.divideScalar(pa);
+
+				B = new THREE.Vector3();
+
+				B.addVectors(P, u.multiplyScalar(pb));
+				u.divideScalar(pb);
+
+				C = new THREE.Vector3();
+
+				C.subVectors(Q, v.multiplyScalar(qc));
+				v.divideScalar(qc);
+
+				D = new THREE.Vector3();
+
+				D.addVectors(Q, v.multiplyScalar(qd));
+
+				var vertices = [A,B,C,D];
+				var faces = []; 
+
+				for (var i = 0; i < n/2; i++){
+					var Ai = i*4, 
+						Bi = i*4+1, 
+						Ci = i*4 + 2, 
+						Di = i*4 + 3;
+					var Ai2 = (i*4+4)%(n*2), 
+						Bi2 = (i*4+5)%(n*2);
+
+					faces.push(
+						new THREE.Face3( Ai, Ci, Bi ), 
+						new THREE.Face3( Ai, Di, Ci ), 
+						new THREE.Face3( Ai, Bi, Di ), 
+						new THREE.Face3( Bi, Ci, Di ),
+
+						new THREE.Face3(Ci, Ai2, Bi2),
+						new THREE.Face3(Ci, Di, Ai2),
+						new THREE.Face3(Bi2, Ai2, Di),
+						new THREE.Face3(Ci, Bi2, Di)
+						
+						)
+				}
+
+				for(var i = 0; i < faces.length ; i++){
+					faces[i].materialIndex = i%4
+				}
+
+
+				z_axis = new THREE.Vector3(0,0,1);
+
+				for(var i = 1; i < Math.floor(n/2); i++){
+					var A1 = new THREE.Vector3();
+					A1.copy(A);
+					A1.applyAxisAngle(z_axis, i*2*alpha);
+					var B1 = new THREE.Vector3();
+					B1.copy(B);
+					B1.applyAxisAngle(z_axis, i*2*alpha);
+					var C1 = new THREE.Vector3();
+					C1.copy(C);
+					C1.applyAxisAngle(z_axis, i*2*alpha);
+					var D1 = new THREE.Vector3();
+					D1.copy(D);
+					D1.applyAxisAngle(z_axis, i*2*alpha);
+
+					vertices.push(A1,B1,C1,D1)
+				}		
+
+				v.divideScalar(qd);				
+				return([vertices,faces]);
+
+			}
+
+			function initGUI(){
+				// Initialise the dat.gui
+
+				gui = new dat.GUI();
+
+				// We are
+				guiData = {	"Linear":true, 
+							"Play/Pause": function(val){guiData.Linear=!guiData.Linear}};
+
+				guiData.guiPA = gui.add(kaleidocycleSettings,"PA",-100,100).onChange( function(value){
+					
+					if(kaleidocycleSettings.PB <= -value){
+						kaleidocycleSettings.PB = -value
+					}
+
+					guiData.guiPB.min(-value);
+					guiData.guiPB.updateDisplay();
+
+				});
+				guiData.guiPB = gui.add(kaleidocycleSettings,"PB",-100,100);
+
+				guiData.guiQC = gui.add(kaleidocycleSettings,"QC",-100,100).onChange( function(value){
+					
+					if(kaleidocycleSettings.QD <= -value){
+						kaleidocycleSettings.QD = -value
+					}
+
+					guiData.guiQD.min(-value);
+					guiData.guiQD.updateDisplay();
+
+				});
+				guiData.guiQD =gui.add(kaleidocycleSettings,"QD",-100,100);
+
+				// When we update the number of sides, we want to change h, scale factor, such that the kaleidocycle doesn't actually change size.
+				numberOfSides = gui.add(kaleidocycleSettings,"Sides",6).step(2).onChange( function(value){kaleidocycleSettings.h = 100*Math.tan(2*Math.PI/value)});
+
+				// If we change theta, we want to stop the animation.
+				guiData.theta = gui.add(kaleidocycleSettings,"Theta",0,360).onChange( function(value){guiData.Linear = false});
+
+
+				linearAnim = gui.add(guiData, "Play/Pause").listen();
+
+			}
+
+			function init() {
+
+				container = document.getElementById( 'container' );
+
+				camera = new THREE.PerspectiveCamera( 20, window.innerWidth / window.innerHeight, 1, 10000 );
+				camera.position.z = 1800;
+
+				scene = new THREE.Scene();
+
+				light = new THREE.DirectionalLight( 0x555555 );
+				light.position.set( 0, 0, 1 );
+				scene.add( light );
+
+				light = new THREE.DirectionalLight( 0x888888 );
+				light.position.set( 1, 1, 0 );
+				scene.add( light );
+
+				light = new THREE.DirectionalLight( 0x888888 );
+				light.position.set( 1, 0, 0 );
+				scene.add( light );
+
+				light = new THREE.DirectionalLight( 0x888888 );
+				light.position.set( -1, 1, 0 );
+				scene.add( light );
+
+				initGUI();
+
+				// shadow
+
+				var canvas = document.createElement( 'canvas' );
+				canvas.width = 128;
+				canvas.height = 128;
+
+				var context = canvas.getContext( '2d' );
+				var gradient = context.createRadialGradient( canvas.width / 2, canvas.height / 2, 0, canvas.width / 2, canvas.height / 2, canvas.width / 2 );
+				gradient.addColorStop( 0.1, 'rgba(210,210,210,1)' );
+				gradient.addColorStop( 1, 'rgba(255,255,255,1)' );
+
+				context.fillStyle = gradient;
+				context.fillRect( 0, 0, canvas.width, canvas.height );
+
+				var shadowTexture = new THREE.Texture( canvas );
+				shadowTexture.needsUpdate = true;
+
+				var shadowMaterial = new THREE.MeshBasicMaterial( { map: shadowTexture } );
+				var shadowGeo = new THREE.PlaneBufferGeometry( 300, 300, 1, 1 );
+
+				mesh = new THREE.Mesh( shadowGeo, shadowMaterial );
+				mesh.position.y = - 250;
+				mesh.rotation.x = - Math.PI / 2;
+				scene.add( mesh );
+
+				var faceIndices = [ 'a', 'b', 'c', 'd' ];
+
+				var color, f, f2, f3, p, n, vertexIndex,
+					radius = 200;
+
+				var materials = [
+
+					new THREE.MeshPhongMaterial( { color: 0xffffff, shading: THREE.FlatShading, vertexColors: THREE.VertexColors } ),
+					new THREE.MeshBasicMaterial( { color: 0x000000, shading: THREE.FlatShading, wireframe: true, wireframeLinewidth:2, transparent: true } )
+
+				];
+				
+
+				var tet = generate_tetrahedron_chain(0,50*Math.sqrt(3),120,25,50,25,50);
+
+				kaleidocycle_geometry  = new THREE.Geometry(); 
+				kaleidocycle_geometry.vertices = tet[0];
+				kaleidocycle_geometry.faces = tet[1]
+				kaleidocycle_geometry.computeBoundingSphere();
+				kaleidocycle_geometry.elementsNeedUpdate =true; 
+				kaleidocycle_geometry.verticesNeedUpdate =true; 
+
+				var kmats = new THREE.MeshFaceMaterial(kaleidocycleMaterials);
+
+				var materials = [
+					kmats,
+					new THREE.MeshBasicMaterial( { color: 0x000000, shading: THREE.FlatShading, wireframe: true, transparent: true } )
+				];
+
+
+				kaleidocycleObject = THREE.SceneUtils.createMultiMaterialObject( kaleidocycle_geometry, materials);
+				kaleidocycleObject.position.x = 0;
+				kaleidocycleObject.rotation.x = 0;
+				scene.add( kaleidocycleObject );
+
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setClearColor( 0xffffff );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				container.appendChild( renderer.domElement );
+
+				stats = new Stats();
+				stats.domElement.style.position = 'absolute';
+				stats.domElement.style.top = '0px';
+				container.appendChild( stats.domElement );
+				renderer.domElement.addEventListener( 'mousedown', onDocumentMouseDown, false );
+				document.addEventListener( 'mouseup', onDocumentMouseUp, false );
+				document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+				document.addEventListener( 'mouseOut', onDocumentMouseOut, false );
+				//
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+			}
+
+			function onWindowResize() {
+
+				windowHalfX = window.innerWidth / 2;
+				windowHalfY = window.innerHeight / 2;
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function onDocumentMouseMove( event ) {
+
+				mouse.x = ( event.clientX - windowHalfX );
+				mouse.y = ( event.clientY - windowHalfY );
+
+			}
+
+			function onDocumentMouseDown(event){
+				mousedown = true;
+			}
+
+			function onDocumentMouseUp(event){
+				mousedown = false;
+			}
+
+			function onDocumentMouseOut( event) {
+				// mouseX = windowHalfX;
+				// mouseY = windowHalfY;
+				mousedown = false;
+			}
+
+			//
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				render();
+				stats.update();
+
+			}
+
+			function render() {
+				time += 0.02;
+				// camera.position.x += ( mouseX - camera.position.x ) * 0.05;
+				// camera.position.y += ( - mouseY - camera.position.y ) * 0.05;
+				if (kaleidocycleObject ){
+					if(guiData.Linear){
+						kaleidocycleSettings.Theta += 1;
+						kaleidocycleSettings.Theta = kaleidocycleSettings.Theta%360;
+						guiData.theta.updateDisplay();
+					}
+
+					if(mousedown ){
+
+						kaleidocycleObject.rotation.y += (mouse.x-lastMouse.x)*Math.PI/180;
+						kaleidocycleObject.rotation.x += (mouse.y-lastMouse.y)*Math.PI/180;
+
+					}
+					lastMouse.x = mouse.x;
+					lastMouse.y = mouse.y;
+					
+					var swing_time = (time+Math.sin(time*2));
+					var cube_time = swing_time+Math.PI/10+Math.acos(Math.sqrt(2/3));
+					var tet = generate_tetrahedron_chain(
+							kaleidocycleSettings.Theta,
+							kaleidocycleSettings.h,
+							kaleidocycleSettings.Sides,
+							kaleidocycleSettings.PA,
+							kaleidocycleSettings.PB,
+							kaleidocycleSettings.QC,
+							kaleidocycleSettings.QD);
+
+					kaleidocycleObject.children[0].geometry.vertices = tet[0];
+					kaleidocycleObject.children[0].geometry.verticesNeedUpdate = true;
+					kaleidocycleObject.children[0].geometry.elementsNeedUpdate = true;
+
+					if (tet[1].length != kaleidocycleObject.children[0].geometry.faces.length){
+						scene.remove(kaleidocycleObject);
+						scene.remove(kaleidocycleWireframe);
+
+						var kaleidocycle_geometry  = new THREE.Geometry(); 
+						kaleidocycle_geometry.vertices = tet[0];
+						kaleidocycle_geometry.faces = tet[1]
+						kaleidocycle_geometry.computeBoundingSphere();
+						kaleidocycle_geometry.elementsNeedUpdate =true; 
+						kaleidocycle_geometry.verticesNeedUpdate =true; 
+
+
+						var kmats = new THREE.MeshFaceMaterial(kaleidocycleMaterials);
+
+				var materials = [
+					kmats,
+					new THREE.MeshBasicMaterial( { color: 0x000000, shading: THREE.FlatShading, wireframe: true,wireframeLinewidth:3, transparent: true } )
+				];
+
+
+				kaleidocycleObject = THREE.SceneUtils.createMultiMaterialObject( kaleidocycle_geometry, materials); 
+						kaleidocycleObject.position.x = 0;
+						kaleidocycleObject.rotation.x = 0;
+
+						scene.add( kaleidocycleObject );
+
+					}
+					
+					//kaleidocycleObject.rotation.x += 0.005;
+				}
+				camera.lookAt( scene.position );
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	
+
+</body></html>
